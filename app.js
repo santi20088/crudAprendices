@@ -1,6 +1,14 @@
 const { error } = require('console');
 const express = require('express');
+const multer= require("multer")             // MOVIDO ARRIBA para evitar fallos de inicialización
+const sistemaArchivos = require ('fs');    // MOVIDO ARRIBA
+const ruta = require('path')                // MOVIDO ARRIBA para que funcione en el almacenamiento de multer
 const registroMiddleware =require("./middleware/registroMiddleware")
+const manejoErrores  = require ("./middleware/manejadorErrores")
+const autenticarToken= require("./middleware/autenticar")
+const jwtoken =require("jsonwebtoken")
+
+
 require('dotenv/config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,7 +29,6 @@ app.use((req,res,next)=>{
 app.use(registroMiddleware)
 
 //utilizacion de libreria multer
-const multer= require("multer")
 //configurar almacenamiento
 const almacenamiento =multer.diskStorage({
   destination:(req,file,cb)=>{
@@ -35,9 +42,6 @@ const almacenamiento =multer.diskStorage({
 })
 
 const cargar =multer({storage:almacenamiento})
-//libreria para leer archivos
-const sistemaArchivos = require ('fs');
-const ruta = require('path')
 //generar una ruta para el archivo aprendices.json
 const rutaArchivojson = ruta.join(__dirname,'listaDatos.json');
 
@@ -67,9 +71,9 @@ app.get('/aprendices/:dni', (req, res) => {
         }
 
         try {
-            const listaAprendices = JSON.parse(datos);
+            const listaCampres = JSON.parse(datos);
             // Buscar el aprendiz que coincida con el DNI proporcionado
-            const aprendizEncontrado = listaAprendices.find(aprendiz => String(aprendiz.dni) === dniBusqueda);
+            const aprendizEncontrado = listaCampres.find(aprendiz => String(aprendiz.dni) === dniBusqueda);
 
             // Si no se encuentra, retornar un estado 404
             if (!aprendizEncontrado) {
@@ -128,7 +132,8 @@ app.post("/aprendices",cargar.single("imagen"), validarCampos, (req, res) => {
 });
 
 //endpoint editar aprendiz por dni
-app.put("/aprendices/:dni", validarCampos, (req, res) => {
+// CORRECCIÓN: Se agrega cargar.single("imagen") para capturar datos multimedia en la edición
+app.put("/aprendices/:dni", cargar.single("imagen"), validarCampos, (req, res) => {
   const dni = String(req.params.dni);
   const datoAprendiz = req.body;
 
@@ -138,6 +143,11 @@ app.put("/aprendices/:dni", validarCampos, (req, res) => {
     }
 
     let listaaprendices = JSON.parse(datos);
+
+    // Si se sube una nueva imagen en la edición, se actualiza el campo avatar
+    if (req.file) {
+      datoAprendiz.avatar = `/misImagenes/${req.file.filename}`;
+    }
 
     listaaprendices = listaaprendices.map((aprendiz) => {
       return String(aprendiz.dni) === dni ? { ...aprendiz, ...datoAprendiz } : aprendiz;
@@ -183,7 +193,41 @@ app.delete('/aprendices/:dni', (req, res) => {
   });
 });
 
+//endpoint para provocar un error
+app.get("/error",(req,res,next)=>{
+  next(new Error("Error provocado"))
+})
 
+//endpoint con ruta protegida
+app.get("/rutaProtegida",autenticarToken,(req,res)=>{
+  res.json({mensaje:"Es este una ruta protegida"})
+})
+
+//endpoint inicio sesion para generar token
+app.post("/login", (req,res)=>{
+  const {usuario,clave} =req.body
+  //simular bd
+  const usuariobd={
+    "usuario":"Alejandro",
+    "clave":"abc123"
+  }
+  //validar datos del usuario
+  if (usuario !== usuariobd.usuario || clave !== usuariobd.clave){
+    // CORRECCIÓN: Se añade return para que detenga la ejecución si las credenciales fallan
+    return res.status(401).json({mensaje:"usuario y/o clave incorrecta."})
+  }
+  //crear token
+  const token = jwtoken.sign(
+  //pasamos datos del usaurio
+  {user:usuario},
+  // CORRECCIÓN: Corregido 'proccess' por 'process' y 'expirexIn' por 'expiresIn'
+  process.env.JWT_SECRET,
+  {expiresIn:"1h"}
+  )
+  res.json({token})
+})
+//manejador de errores
+app.use(manejoErrores)
 //modo de escucha del servidor
 app.listen(PORT, () => {
   console.log(`Servidor funcionando en http://localhost:${PORT}`);

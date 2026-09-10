@@ -4,6 +4,8 @@ npm install express –save
 npm install cors
 npm install dotenv
 npm install multer
+npm install jsonwebtoken
+npm install bcryptjs
 
 luego ejecuta: npm run dev
 
